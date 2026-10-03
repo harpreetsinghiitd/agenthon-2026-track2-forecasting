@@ -1,0 +1,31 @@
+# my-agent-2 — pinned runtime dependencies.
+#
+# The build prompt requires exact pins, and every entry below is an exact pin.
+# They are NOT YET VERIFIED against the interpreter that will run this code: the
+# command runner was unavailable while Phase 1 was written, so nothing here has
+# been resolved against a live environment. Resolve them with
+#
+#     python -m pip freeze
+#
+# before the Phase 6 image build and correct anything that disagrees. The floors
+# this repository's own scorer declares (pyproject.toml: numpy>=2.1, pandas>=2.2,
+# pyarrow>=18) bound the choices below.
+#
+# Phase 1 surface: parsing, panel statistics, validation and writing.
+numpy==2.3.3
+pandas==2.3.3
+pyarrow==21.0.0
+
+# Tests.
+pytest==8.4.2
+
+# scipy / statsmodels activated in Phase 2 for the ARIMA fit and the
+# fallback's Student-t draws. Versions verified in `.venv` via `uv pip list`.
+# (statsmodels pinned to 0.15.0 rather than the spec's 0.14.5: 0.14.5 fails to
+# import on Python 3.14 — `deprecate_kwarg() missing 1 required positional
+# argument`. Bump is interpreter-compat, not a functional change.)
+scipy==1.16.2
+statsmodels==0.15.0
+# arch==7.2.0              # Phase 5 — GARCH
+# requests activated in Phase 3 for the House model HTTP client.
+requests==2.32.5

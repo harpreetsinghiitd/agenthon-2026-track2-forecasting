@@ -1,59 +1,61 @@
 #!/usr/bin/env python3
-"""Track 2 forecasting agent — orchestrator."""
+"""Track 2 forecasting agent — CLI shim over `agent.main`.
+
+The pipeline lives in `agent/main.py` (Phase 2+); this file preserves the
+`--panels/--text/--asof/--out` interface that `forecast.sh` and external
+harnesses already call.  `--out` names the `forecast.parquet` file; the
+gated, atomic three-file write happens in its parent directory.
+"""
 import argparse
+import datetime as dt
 import pathlib
+import sys
 
-import input as io
-import forecaster
-import llm
-import combiner
-import output as out
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+from agent.main import run  # noqa: E402
+from harness.tools.card import parse_card  # noqa: E402
 
 
-AGENT_DIR = pathlib.Path(__file__).resolve().parent
+def find_card(start: pathlib.Path) -> pathlib.Path:
+    """Search start, its parent, and grandparent for card.toml."""
+    for d in (start, start.parent, start.parent.parent):
+        c = d / "card.toml"
+        if c.exists():
+            return c
+    raise FileNotFoundError(f"no card.toml found near {start}")
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
-    p.add_argument("--panels", required=True)
-    p.add_argument("--text", required=True)
-    p.add_argument("--asof", required=True)
-    p.add_argument("--out", required=True)
+    p.add_argument("--panels", required=True, help="Directory with the parquet panel")
+    p.add_argument("--text", required=True, help="Directory with text corpus documents")
+    p.add_argument("--asof", required=True, help="Information cutoff (YYYY-MM-DD)")
+    p.add_argument("--out", required=True, help="Output path for forecast.parquet")
+    p.add_argument("--draws", type=int, default=200, help="Number of draws (>= 200)")
     return p.parse_args()
-
-
-def resolve_out(raw: str) -> pathlib.Path:
-    """If --out is relative, anchor it to the folder containing this file."""
-    p = pathlib.Path(raw)
-    if p.is_absolute():
-        return p
-    return AGENT_DIR / p
 
 
 def main() -> None:
     args = parse_args()
     panels_dir = pathlib.Path(args.panels)
-    text_dir = pathlib.Path(args.text)
-    out_path = resolve_out(args.out)
+    out_path = pathlib.Path(args.out)
+    out_dir = out_path.parent
 
-    card = io.load_card(io.find_card(panels_dir))
-    panel_id = io.get_panel_id(card)
-    panel = io.load_panel(panels_dir, panel_id)
-    documents = io.load_text(text_dir, args.asof)
+    card_path = find_card(panels_dir)
+    card = parse_card(card_path)
+    cli_asof = dt.date.fromisoformat(args.asof)
+    if cli_asof != card.asof:
+        raise SystemExit(
+            f"--asof {cli_asof} disagrees with card data_cutoff {card.asof}; "
+            "the card is authoritative"
+        )
 
-    asset_ids = list(card["targets"]["asset_ids"])
-    horizons = list(card["targets"]["horizons"])
-    n_draws = max(500, io.get_n_draws_min(card, default=200))
-
-    raw_draws = forecaster.fit_and_sample(panel, card, args.asof, n_draws)
-    signals = llm.extract_signals(documents, args.asof, card)
-    adjusted_draws = combiner.apply(raw_draws, signals)
-
-    out.write_all(adjusted_draws, asset_ids, horizons, card,
-                  args.asof, n_draws, signals, out_path)
-
-    print(f"wrote {out_path}, forecast_meta.json, forecast_rationale.md")
-    print(f"  {len(asset_ids)} asset(s) x {len(horizons)} horizon(s), {n_draws} draws")
+    report = run(card_path, panels_dir, out_dir, args.draws)
+    print(
+        f"forecast complete for {report.unit_id}: {report.n_draws} draws, "
+        f"{report.cell_count} cells, gates passed: {', '.join(report.gates)}"
+    )
 
 
 if __name__ == "__main__":
