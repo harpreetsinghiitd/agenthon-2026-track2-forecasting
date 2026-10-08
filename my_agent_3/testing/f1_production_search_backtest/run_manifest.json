@@ -1,0 +1,48 @@
+{
+  "design": "Numeric-only rolling origins; panel fit data ends at t1; later panel values through t2 are used only as outcomes; no text documents are loaded or used.",
+  "t0": "first target observation available in each card's panel",
+  "n_draws": 500,
+  "origins_per_card_requested": 4,
+  "scored_cards": [
+    "t2-F1-ai-mom-2024",
+    "t2-F1-aud-on-hold-2016",
+    "t2-F1-cad-boc-2017",
+    "t2-F1-chf-highly-valued-2021",
+    "t2-F1-conflicting-texts-2024",
+    "t2-F1-considerable-period-2003",
+    "t2-F1-conundrum-2005",
+    "t2-F1-dkk-peg-2019",
+    "t2-F1-eur-range-2017",
+    "t2-F1-fed-put-2019",
+    "t2-F1-greater-confidence-2024",
+    "t2-F1-hawkish-cut-2024",
+    "t2-F1-jpy-ycc-flex-2018",
+    "t2-F1-liftoff-telegraph-2015",
+    "t2-F1-measured-pace-2004",
+    "t2-F1-normalization-2017",
+    "t2-F1-patient-dropped-2015",
+    "t2-F1-pause-2006",
+    "t2-F1-qe3-end-2014",
+    "t2-F1-third-cut-2019",
+    "t2-F1-ust-positioning-2018"
+  ],
+  "excluded_cards": [
+    {
+      "card": "t2-F1-cpi-glidepath-2023",
+      "reason": "no complete rolling origins"
+    },
+    {
+      "card": "t2-F1-sahm-watch-2024",
+      "reason": "no complete rolling origins"
+    }
+  ],
+  "origin_failures": [],
+  "csv": "my_agent_3/testing/f1_production_search_backtest/all_card_origin_scores.csv",
+  "plots": {
+    "F1": {
+      "cards": 21,
+      "path": "my_agent_3/testing/f1_production_search_backtest/f1_actual_vs_draw_mean.svg",
+      "points": 156
+    }
+  }
+}

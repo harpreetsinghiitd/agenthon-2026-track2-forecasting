@@ -1,0 +1,58 @@
+{
+  "design": "Numeric-only rolling origins; panel fit data ends at t1; later panel values through t2 are used only as outcomes; no text documents are loaded or used.",
+  "t0": "first target observation available in each card's panel",
+  "n_draws": 500,
+  "origins_per_card_requested": 4,
+  "scored_cards": [
+    "t2-F2-abenomics-2012",
+    "t2-F2-act-as-appropriate-2019",
+    "t2-F2-aud-taper-2013",
+    "t2-F2-boj-thin-signal-2014",
+    "t2-F2-considerable-removal-2004",
+    "t2-F2-credit-crunch-2007",
+    "t2-F2-cut-sizing-2024",
+    "t2-F2-draghi-precommit-2014",
+    "t2-F2-ecb-qe-telegraph-2014",
+    "t2-F2-eur-parity-2022",
+    "t2-F2-higher-for-longer-2023",
+    "t2-F2-nirp-paradox-2016",
+    "t2-F2-opec-cad-2014",
+    "t2-F2-powell-pivot-2019",
+    "t2-F2-qe2-jackson-hole-2010",
+    "t2-F2-shunto-nirp-exit-2024",
+    "t2-F2-some-pain-2022",
+    "t2-F2-taper-begins-2013",
+    "t2-F2-taper-testimony-2013",
+    "t2-F2-time-has-come-2024",
+    "t2-F2-trade-war-escalation-2019",
+    "t2-F2-trichet-alertness-2008",
+    "t2-F2-whatever-it-takes-2012"
+  ],
+  "excluded_cards": [
+    {
+      "card": "t2-F2-cnh-stress-2015",
+      "reason": "no complete rolling origins"
+    },
+    {
+      "card": "t2-F2-cnh-tradewar-2018",
+      "reason": "no complete rolling origins"
+    },
+    {
+      "card": "t2-F2-fragile-five-brl-2013",
+      "reason": "no complete rolling origins"
+    },
+    {
+      "card": "t2-F2-fragile-five-inr-2013",
+      "reason": "no complete rolling origins"
+    }
+  ],
+  "origin_failures": [],
+  "csv": "my_agent_3/testing/f2_production_search_backtest/all_card_origin_scores.csv",
+  "plots": {
+    "F2": {
+      "cards": 23,
+      "path": "my_agent_3/testing/f2_production_search_backtest/f2_actual_vs_draw_mean.svg",
+      "points": 96
+    }
+  }
+}

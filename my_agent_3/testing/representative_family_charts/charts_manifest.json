@@ -1,0 +1,62 @@
+[
+  {
+    "family": "F1",
+    "card": "t2-F1-aud-on-hold-2016",
+    "asset": "AUD",
+    "unit": "usd_per_aud",
+    "path": "my_agent_3/testing/representative_family_charts/f1_t2-F1-aud-on-hold-2016_timeline.svg",
+    "origins": 2,
+    "documents_marked": 5,
+    "actual_start": "2012-05-01",
+    "actual_end": "2016-11-01",
+    "forecast_method": [
+      "fixed ARIMA(1,0,1); no text",
+      "fixed ARIMA(1,0,1); no text"
+    ]
+  },
+  {
+    "family": "F2",
+    "card": "t2-F2-abenomics-2012",
+    "asset": "JPY",
+    "unit": "jpy_per_usd",
+    "path": "my_agent_3/testing/representative_family_charts/f2_t2-F2-abenomics-2012_timeline.svg",
+    "origins": 2,
+    "documents_marked": 5,
+    "actual_start": "2009-06-01",
+    "actual_end": "2012-11-30",
+    "forecast_method": [
+      "fixed ARIMA(1,0,1); no text",
+      "fixed ARIMA(1,0,1); no text"
+    ]
+  },
+  {
+    "family": "F3",
+    "card": "t2-F3-bear-flattener-2022",
+    "asset": "UST_10Y",
+    "unit": "percent_per_annum",
+    "path": "my_agent_3/testing/representative_family_charts/f3_t2-F3-bear-flattener-2022_timeline.svg",
+    "origins": 2,
+    "documents_marked": 8,
+    "actual_start": "2018-06-14",
+    "actual_end": "2022-06-15",
+    "forecast_method": [
+      "fixed ARIMA(1,0,1); no text",
+      "ETS fallback after fixed ARIMA failure: RuntimeError"
+    ]
+  },
+  {
+    "family": "F4",
+    "card": "t2-F4-aud-gfc-2008",
+    "asset": "AUD",
+    "unit": "usd_per_aud",
+    "path": "my_agent_3/testing/representative_family_charts/f4_t2-F4-aud-gfc-2008_timeline.svg",
+    "origins": 2,
+    "documents_marked": 6,
+    "actual_start": "2005-07-15",
+    "actual_end": "2008-09-12",
+    "forecast_method": [
+      "fixed ARIMA(1,0,1); no text",
+      "ETS fallback after fixed ARIMA failure: RuntimeError"
+    ]
+  }
+]

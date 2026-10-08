@@ -9,8 +9,13 @@ from .arima import _find_column, _horizon_steps
 
 
 def fit_and_sample(panel: pd.DataFrame, card: dict, asof: str, n_draws: int,
-                   seed: int = 44) -> np.ndarray:
-    """Sample random-walk paths from historical increments."""
+                   seed: int = 44, drift_window: int | None = None,
+                   drift_shrink: float = 0.0) -> np.ndarray:
+    """Sample random-walk paths, optionally using recent shrunk drift."""
+    if drift_window is not None and drift_window < 2:
+        raise ValueError("drift_window must be at least two")
+    if drift_shrink < 0:
+        raise ValueError("drift_shrink must be non-negative")
     targets = card["targets"]
     assets = [str(x) for x in targets["asset_ids"]]
     horizons = [int(x) for x in targets["horizons"]]
@@ -32,8 +37,11 @@ def fit_and_sample(panel: pd.DataFrame, card: dict, asof: str, n_draws: int,
             if np.any(values <= -1):
                 raise ValueError(f"asset {asset!r} contains returns <= -100%")
             increments = np.log1p(values)
-            mu = float(np.mean(increments))
-            residuals = increments - mu
+            fit_increments = increments[-drift_window:] if drift_window else increments
+            estimated_mu = float(np.mean(fit_increments))
+            se = float(np.std(fit_increments, ddof=1) / np.sqrt(len(fit_increments))) if len(fit_increments) > 1 else 0.0
+            mu = float(np.sign(estimated_mu) * max(abs(estimated_mu) - drift_shrink * se, 0.0))
+            residuals = fit_increments - estimated_mu
             paths = rngs[ai].choice(residuals if len(residuals) else np.array([0.0]),
                                      size=(n_draws, max_steps), replace=True) + mu
             for hi, step in enumerate(steps[ai]):
@@ -41,8 +49,11 @@ def fit_and_sample(panel: pd.DataFrame, card: dict, asof: str, n_draws: int,
         elif target_type == "level":
             last = float(values[-1])
             increments = np.diff(values)
-            mu = float(np.mean(increments)) if len(increments) else 0.0
-            residuals = increments - mu
+            fit_increments = increments[-drift_window:] if drift_window else increments
+            estimated_mu = float(np.mean(fit_increments)) if len(fit_increments) else 0.0
+            se = float(np.std(fit_increments, ddof=1) / np.sqrt(len(fit_increments))) if len(fit_increments) > 1 else 0.0
+            mu = float(np.sign(estimated_mu) * max(abs(estimated_mu) - drift_shrink * se, 0.0))
+            residuals = fit_increments - estimated_mu
             sampled = rngs[ai].choice(residuals if len(residuals) else np.array([0.0]),
                                       size=(n_draws, max_steps), replace=True) + mu
             paths = last + np.cumsum(sampled, axis=1)

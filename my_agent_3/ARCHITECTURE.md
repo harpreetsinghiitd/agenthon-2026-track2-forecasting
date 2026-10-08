@@ -23,6 +23,8 @@ my_agent_3/
 ├── statistical_layer/
 │   ├── __init__.py
 │   ├── arima.py
+│   ├── analog.py
+│   ├── model_selection.py
 │   ├── block_bootstrap.py
 │   ├── ets.py
 │   ├── random_walk.py
@@ -69,9 +71,11 @@ Each statistical model receives the filtered numeric panel, card, `asof`, draw c
 | File | Inputs | Outputs / responsibility |
 |---|---|---|
 | `statistical_layer/__init__.py` | None. | Makes the folder importable; may re-export the shared `run` interface. |
-| `statistical_layer/arima.py` | Panel, card, `asof`, draw count, seed. | ARIMA predictive draws for each requested asset and horizon. Primary univariate model. For log returns, output the card's target quantity (cumulative log return if that is the declared target convention); for levels, output forecast levels. |
-| `statistical_layer/block_bootstrap.py` | Panel, card, `asof`, draw count, seed, block length. | Resamples contiguous transformed increments; selected first for F1 log-return targets only, based on preliminary rolling-origin results. Level targets stay ARIMA-first. |
-| `statistical_layer/ets.py` | Same numerical inputs. | Exponential smoothing predictive draws; fallback when ARIMA cannot fit or converge. |
+| `statistical_layer/analog.py` | Panel, card, `asof`, draw count, seed, analogue count. | Compares the latest trend/volatility state with historical states that have fully observed future paths; samples whole donor paths for F1. Requires at least 20 complete donors. |
+| `statistical_layer/model_selection.py` | Panel, card, `asof`, draw count, seed. | F1 fallback: scores target-aware ARIMA variants, residual-block ARIMA, ETS, analog paths, and local-drift random walk at up to four past-only inner origins. Adds only challengers that clear the gain and consistency thresholds, then samples a conservative mixture fitted through `asof`. |
+| `statistical_layer/arima.py` | Panel, card, `asof`, draw count, seed. | Simulates full state-space ARIMA paths per asset, then reads all requested horizons from each shared path. For log returns, output cumulative log returns; for levels, output the simulated level at each horizon. |
+| `statistical_layer/block_bootstrap.py` | Panel, card, `asof`, draw count, seed, block length. | Resamples contiguous transformed increments; fallback for F1 log-return targets if the rolling selector's candidates fail. |
+| `statistical_layer/ets.py` | Same numerical inputs. | Exponential smoothing paths with resampled contiguous residual blocks; fallback when ARIMA cannot fit or converge. |
 | `statistical_layer/random_walk.py` | Same numerical inputs. | Random-walk or historical-increment draws as the final robust fallback. |
 | `statistical_layer/var.py` | Aligned multivariate panel, card, `asof`, draw count, seed. | Joint VAR forecast paths/draws that model cross-asset effects in conditional means; primarily useful for F3. |
 | `statistical_layer/markov_switching_ar.py` | A target series, card settings, `asof`, draw count, seed. | Regime-dependent autoregressive draws; candidate for F2 when sufficient history and a stable fit are available. |
@@ -83,8 +87,8 @@ These functions receive draws and any fitted residual/volatility information the
 | File | Inputs | Outputs / responsibility |
 |---|---|---|
 | `transformation_layer/__init__.py` | None. | Makes the folder importable; may re-export transform functions. |
-| `transformation_layer/garch.py` | Historical target/residual series, base draws, card, seed. | Conditional volatility estimates or rescaled draws. Supplies time-varying scale, mainly for F4 and potentially F3. |
-| `transformation_layer/skewed_t.py` | Base draws or standardized innovations, estimated scale, skew/tail parameters, seed. | Same-shape draws with fat-tailed and asymmetric marginal distributions. Parameters must be estimated from permitted numerical history, not future outcomes. |
+| `transformation_layer/garch.py` | Historical target/residual series, base draws, card, seed, shrinkage and scale bounds. | GARCH volatility blended toward the empirical horizon variance; scale adjustments are bounded to reduce unstable fits. Mainly for F4 and potentially F3. |
+| `transformation_layer/skewed_t.py` | Base draws or standardized innovations, estimated scale, skew/tail parameters, seed. | Same-shape draws with fat-tailed and asymmetric marginal distributions. Its monotone rank transform preserves dependence among horizons and assets. Parameters must be estimated from permitted numerical history, not future outcomes. |
 | `transformation_layer/markov_switching_garch.py` | Historical series/residuals, base draws, card, seed. | Same-shape draws with regime-dependent volatility; later F4 refinement. |
 | `transformation_layer/evt.py` | Historical residuals and base draws. | Tail-adjusted draws using an extreme-value model; optional later refinement when there is enough tail data. |
 
@@ -94,9 +98,9 @@ Joint-draw functions receive marginal draws and historical aligned observations 
 
 | File | Inputs | Outputs / responsibility |
 |---|---|---|
-| `joint_draws_layer/__init__.py` | None. | Makes the folder importable; may re-export the selected coupling function. |
-| `joint_draws_layer/gaussian_copula.py` | Marginal draws, aligned history or dependence matrix, seed. | Reorders/resamples marginal draws to impose estimated Gaussian dependence; first copula implementation for F3. |
-| `joint_draws_layer/student_t_copula.py` | Marginal draws, aligned history or correlation and degrees-of-freedom estimates, seed. | Same-shape draws with dependence in joint extremes; F3 upgrade and multi-asset F4 candidate. |
+| `joint_draws_layer/__init__.py` | Aligned panel, target assets/type, optional half-life and shrinkage. | Estimates a recency-weighted correlation matrix with dimension/sample-aware shrinkage and PSD projection. |
+| `joint_draws_layer/gaussian_copula.py` | Marginal draws, aligned history or dependence matrix, seed, optional estimator settings. | Reassigns complete asset paths by terminal-horizon Gaussian copula ranks, preserving each asset's within-path horizon sequence. |
+| `joint_draws_layer/student_t_copula.py` | Marginal draws, aligned history or correlation and degrees-of-freedom estimates, seed, optional estimator settings. | Adds terminal cross-asset tail dependence while moving each asset's full path as one scenario. |
 | `joint_draws_layer/vine_copula.py` | Marginal draws, historical aligned data, seed, and model settings. | Flexible pairwise dependence for larger or heterogeneous panels; optional after simpler copulas. |
 | `joint_draws_layer/regime_copula.py` | Marginal draws, regime probabilities/labels, dependence estimates per regime, seed. | Same-shape draws whose dependence varies by regime; optional refinement for regime-aware cards. |
 
@@ -123,7 +127,7 @@ Suggested signal fields include direction/mean bias, regime-change probability, 
 
 | Family | Layer order in `main.py` | Initial draw guidance |
 |---|---|---|
-| F1 | Statistical forecast; optionally text conditioning later. | At least 200; use 500 as a practical default. |
+| F1 | Local-drift random walk (252-observation window, full shrinkage); past-only rolling model-selection mixture is the fallback. | At least 200; use 500 as a practical default. |
 | F2 | Statistical forecast (Markov-switching AR when ready); extract text signals; mean shift; variance scale. | At least 200; use 500 as a practical default. |
 | F3 | Statistical forecast (VAR when ready); marginal transformation when enabled; Gaussian copula, then Student-t copula as the upgrade. | At least 200; recommend 500 or more. |
 | F4 | Statistical forecast; GARCH/skewed-t transformation; Student-t copula if multi-asset; extract text signals; variance scale and tail skew. | At least 200; recommend 1,000 or more. |

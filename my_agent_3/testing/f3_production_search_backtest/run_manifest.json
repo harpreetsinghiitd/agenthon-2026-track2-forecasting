@@ -1,0 +1,60 @@
+{
+  "design": "Numeric-only rolling origins; panel fit data ends at t1; later panel values through t2 are used only as outcomes; no text documents are loaded or used.",
+  "t0": "first target observation available in each card's panel",
+  "n_draws": 500,
+  "origins_per_card_requested": 4,
+  "scored_cards": [
+    "t2-EXAMPLE-ust-curve-1m",
+    "t2-F3-bear-flattener-2022",
+    "t2-F3-brexit-joint-2016",
+    "t2-F3-conundrum-joint-2005",
+    "t2-F3-covid-curve-2020",
+    "t2-F3-cpi-shock-cross-2022",
+    "t2-F3-dollar-squeeze-2020",
+    "t2-F3-dots-vs-oil-2014",
+    "t2-F3-funding-flip-2024",
+    "t2-F3-hiking-year-curve-2018",
+    "t2-F3-inversion-persistence-2019",
+    "t2-F3-oil-fx-split-2022",
+    "t2-F3-rates-into-factors-2022",
+    "t2-F3-scandies-stress-2022",
+    "t2-F3-taper-steepener-2013",
+    "t2-F3-term-premium-steepener-2023",
+    "t2-F3-vaccine-rotation-2020"
+  ],
+  "excluded_cards": [
+    {
+      "card": "t2-F3-boj-ust-channel-2023",
+      "reason": "no complete rolling origins"
+    },
+    {
+      "card": "t2-F3-divergence-2014",
+      "reason": "no complete rolling origins"
+    },
+    {
+      "card": "t2-F3-dollar-vortex-2022",
+      "reason": "no complete rolling origins"
+    },
+    {
+      "card": "t2-F3-election-2024-joint",
+      "reason": "no complete rolling origins"
+    },
+    {
+      "card": "t2-F3-fragile-five-joint-2013",
+      "reason": "no complete rolling origins"
+    },
+    {
+      "card": "t2-F3-safe-haven-paradox-2011",
+      "reason": "no complete rolling origins"
+    }
+  ],
+  "origin_failures": [],
+  "csv": "my_agent_3/testing/f3_production_search_backtest/all_card_origin_scores.csv",
+  "plots": {
+    "F3": {
+      "cards": 17,
+      "path": "my_agent_3/testing/f3_production_search_backtest/f3_actual_vs_draw_mean.svg",
+      "points": 504
+    }
+  }
+}

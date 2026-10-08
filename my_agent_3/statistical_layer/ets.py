@@ -39,11 +39,27 @@ def fit_and_sample(panel: pd.DataFrame, card: dict, asof: str, n_draws: int,
                                      seasonal=None, initialization_method="estimated").fit(optimized=True)
         mean = np.asarray(model.forecast(max_steps), dtype=float)
         residual = y - np.asarray(model.fittedvalues, dtype=float)
-        sigma = float(np.nanstd(residual, ddof=1)) if len(residual) > 2 else float(np.std(y))
-        if not np.isfinite(sigma) or sigma <= 0:
-            sigma = max(float(np.std(y)), 1e-8)
-        paths = mean[None, :] + rngs[ai].normal(size=(n_draws, max_steps)) * sigma
+        residual = residual[np.isfinite(residual)]
+        if len(residual) < 2:
+            residual = y - float(np.mean(y))
+        if len(residual) < 1:
+            residual = np.array([0.0])
+
+        # Resample short residual blocks so each horizon belongs to one
+        # simulated path instead of receiving an unrelated endpoint error.
+        block_length = min(5, len(residual))
+        n_blocks = int(np.ceil(max_steps / block_length))
+        max_start = len(residual) - block_length + 1
+        starts = rngs[ai].integers(0, max_start, size=(n_draws, n_blocks))
+        offsets = np.arange(block_length)
+        sampled = residual[(starts[:, :, None] + offsets).reshape(n_draws, -1)]
+        sampled = sampled[:, :max_steps]
+        paths = mean[None, :] + sampled
         for hi, step in enumerate(steps[ai]):
             step = int(step)
-            draws[:, ai, hi] = paths[:, :step].sum(axis=1) if target_type == "log_return" else paths[:, step - 1]
+            draws[:, ai, hi] = (
+                paths[:, :step].sum(axis=1)
+                if target_type == "log_return"
+                else paths[:, step - 1]
+            )
     return draws

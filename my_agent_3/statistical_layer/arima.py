@@ -36,17 +36,17 @@ def _find_column(wide: pd.DataFrame, asset_id: str) -> str:
     return match
 
 
-def _fit_arima(values: np.ndarray):
+def _fit_arima(values: np.ndarray, orders=ARIMA_ORDERS, trend: str | None = None):
     """Fit candidates and return the converged model with lowest finite AIC."""
     best_model = None
     best_aic = np.inf
     failures = []
 
-    for order in ARIMA_ORDERS:
+    for order in orders:
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                fitted = ARIMA(values, order=order).fit()
+                fitted = ARIMA(values, order=order, trend=trend).fit()
             converged = getattr(fitted, "mle_retvals", {}).get("converged", True)
             if converged and np.isfinite(fitted.aic) and fitted.aic < best_aic:
                 best_model = fitted
@@ -117,14 +117,17 @@ def fit_and_sample(
     asof: str,
     n_draws: int,
     seed: int = 42,
+    order: tuple[int, int, int] | None = None,
+    trend: str | None = None,
+    innovation: str = "state_space",
+    block_length: int = 5,
 ) -> np.ndarray:
     """Fit per-asset ARIMA models and return draws shaped ``[draw, asset, horizon]``.
 
     For ``log_return`` targets, panel simple returns are transformed with
-    ``log1p`` and forecast daily log-return draws are accumulated to each horizon.
-    For ``level`` targets, ARIMA is fit directly to the level series. Forecast
-    errors are sampled as Gaussian and independent across forecast steps; later
-    distribution/joint layers can add richer tails and dependence.
+    ``log1p`` and simulated future log-return paths are accumulated to each
+    horizon. For ``level`` targets, the state-space model simulates complete
+    future level paths, preserving covariance between forecast horizons.
     """
     targets = card["targets"]
     asset_ids = [str(asset) for asset in targets["asset_ids"]]
@@ -174,18 +177,46 @@ def fit_and_sample(
         else:
             values = raw
 
-        model = _fit_arima(values)
-        forecast = model.get_forecast(steps=max_steps)
-        mean = np.asarray(forecast.predicted_mean, dtype=np.float64)
-        standard_error = np.asarray(forecast.se_mean, dtype=np.float64)
-        if mean.shape != (max_steps,) or standard_error.shape != (max_steps,):
-            raise RuntimeError(f"ARIMA returned unexpected forecast shape for {asset!r}")
-        if not np.isfinite(mean).all() or not np.isfinite(standard_error).all():
-            raise RuntimeError(f"ARIMA returned non-finite forecasts for {asset!r}")
+        model = _fit_arima(values, orders=(order,) if order else ARIMA_ORDERS, trend=trend)
+        if innovation == "state_space":
+            simulated = np.asarray(
+                model.simulate(
+                    nsimulations=max_steps,
+                    anchor="end",
+                    repetitions=n_draws,
+                    rng=rngs[asset_index],
+                ),
+                dtype=np.float64,
+            )
+            if simulated.shape == (max_steps, 1, n_draws):
+                paths = simulated[:, 0, :].T
+            elif simulated.shape == (max_steps, n_draws):
+                paths = simulated.T
+            else:
+                raise RuntimeError(
+                    f"ARIMA returned unexpected simulated path shape for {asset!r}: "
+                    f"{simulated.shape}"
+                )
+        elif innovation == "residual_block":
+            mean_path = np.asarray(model.get_forecast(steps=max_steps).predicted_mean,
+                                   dtype=np.float64).reshape(-1)
+            residuals = np.asarray(model.resid, dtype=np.float64)
+            residuals = residuals[np.isfinite(residuals)]
+            if not len(residuals):
+                residuals = np.array([0.0])
+            residuals = residuals - np.mean(residuals)
+            effective_block = min(max(1, int(block_length)), len(residuals))
+            n_blocks = int(np.ceil(max_steps / effective_block))
+            max_start = len(residuals) - effective_block + 1
+            starts = rngs[asset_index].integers(0, max_start, size=(n_draws, n_blocks))
+            offsets = np.arange(effective_block)
+            sampled = residuals[(starts[:, :, None] + offsets).reshape(n_draws, -1)]
+            paths = mean_path[None, :] + sampled[:, :max_steps]
+        else:
+            raise ValueError("innovation must be 'state_space' or 'residual_block'")
+        if not np.isfinite(paths).all():
+            raise RuntimeError(f"ARIMA returned non-finite paths for {asset!r}")
 
-        paths = mean[None, :] + rngs[asset_index].standard_normal(
-            (n_draws, max_steps)
-        ) * standard_error[None, :]
         for horizon_index, step in enumerate(steps[asset_index]):
             step = int(step)
             if target_type == "log_return":

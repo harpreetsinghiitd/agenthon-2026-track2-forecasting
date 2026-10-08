@@ -17,7 +17,10 @@ import input as input_io
 import output as output_io
 from joint_draws_layer import gaussian_copula, student_t_copula
 from llm import signals as llm_signals
-from statistical_layer import arima, block_bootstrap, ets, markov_switching_ar, random_walk, var
+from statistical_layer import (
+    arima, block_bootstrap, ets, markov_switching_ar, model_selection,
+    random_walk, var,
+)
 from transformation_layer import garch, skewed_t
 
 
@@ -58,15 +61,33 @@ def _draw_count(card: dict, requested: int | None) -> int:
 def _sample_with_fallback(panel, card, asof: str, n_draws: int, seed: int,
                           family: str) -> tuple[np.ndarray, str]:
     """Try family-relevant numerical models, then ETS and random walk."""
-    if "F1" in family and card.get("targets", {}).get("target_type") == "log_return":
-        # Rolling-origin results favor block resampling for the return cards tested;
-        # level cards did not show a consistent gain, so they stay ARIMA-first.
-        candidates = [("10-step block bootstrap", block_bootstrap.fit_and_sample),
-                      ("ARIMA", arima.fit_and_sample), ("ETS", ets.fit_and_sample),
-                      ("random walk", random_walk.fit_and_sample)]
-    elif "F1" in family:
-        candidates = [("ARIMA", arima.fit_and_sample), ("ETS", ets.fit_and_sample),
-                      ("random walk", random_walk.fit_and_sample)]
+    if "F1" in family:
+        try:
+            draws = random_walk.fit_and_sample(
+                panel, card, asof, n_draws, seed=seed,
+                drift_window=252, drift_shrink=1.0,
+            )
+            expected = (n_draws, len(card["targets"]["asset_ids"]),
+                        len(card["targets"]["horizons"]))
+            if draws.shape != expected or not np.isfinite(draws).all():
+                raise ValueError(f"local-drift random walk returned invalid draws {draws.shape}")
+            return draws, "F1 local-drift random walk (252-step window, full shrinkage)"
+        except Exception as exc:
+            try:
+                draws, selected, details = model_selection.select_and_sample(
+                    panel, card, asof, n_draws, seed=seed,
+                )
+                return draws, f"F1 rolling-selector fallback: {selected}; {details}"
+            except Exception as selection_exc:
+                selection_error = f"drift and rolling selection failed ({exc}; {selection_exc})"
+            candidates = []
+            if card.get("targets", {}).get("target_type") == "log_return":
+                candidates.append(("10-step block bootstrap", block_bootstrap.fit_and_sample))
+            candidates.extend([
+                ("ARIMA", arima.fit_and_sample), ("ETS", ets.fit_and_sample),
+                ("random walk", random_walk.fit_and_sample),
+            ])
+            selection_error = f"rolling model selection failed ({exc})"
     elif "F3" in family:
         candidates = [("ARIMA", arima.fit_and_sample), ("VAR", var.fit_and_sample),
                       ("ETS", ets.fit_and_sample), ("random walk", random_walk.fit_and_sample)]
@@ -78,7 +99,7 @@ def _sample_with_fallback(panel, card, asof: str, n_draws: int, seed: int,
         candidates = [("ARIMA", arima.fit_and_sample), ("ETS", ets.fit_and_sample),
                       ("random walk", random_walk.fit_and_sample)]
 
-    errors = []
+    errors = [selection_error] if "F1" in family else []
     for name, model in candidates:
         try:
             draws = model(panel, card, asof, n_draws, seed=seed)
@@ -113,7 +134,7 @@ def run(args: argparse.Namespace) -> dict:
     if "F3" in family:
         try:
             draws = garch.transform(draws, panel, card, args.asof, seed=args.seed + 90)
-            method_notes.append("GARCH marginal volatility scaling")
+            method_notes.append("shrunk GARCH/EWMA marginal volatility calibration")
         except Exception as exc:
             method_notes.append(f"GARCH skipped ({exc})")
 
@@ -131,7 +152,7 @@ def run(args: argparse.Namespace) -> dict:
     if "F4" in family:
         try:
             draws = garch.transform(draws, panel, card, args.asof, seed=args.seed + 200)
-            method_notes.append("GARCH volatility scaling")
+            method_notes.append("shrunk GARCH/EWMA volatility calibration")
         except Exception as exc:
             method_notes.append(f"GARCH skipped ({exc})")
         draws = skewed_t.transform(draws, seed=args.seed + 201)

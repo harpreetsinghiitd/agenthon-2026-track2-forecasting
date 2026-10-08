@@ -8,10 +8,11 @@ The first goal is a reliable valid submission, then stronger family-specific mod
 
 ### Current implementation status
 
-- Implemented: CLI wrapper, input loading/cutoff, output serialization, ARIMA/ETS/random-walk and block-bootstrap forecasts, VAR, two-regime AR, GARCH scaling, skewed-t draws, EVT and regime-volatility transform modules, and Gaussian/Student-t/dependence modules.
-- Wired into `main.py`: F1 log-return cards try 10-step block bootstrap, then ARIMA/ETS/random-walk; F1 level cards start with ARIMA. F2 uses ARIMA then regime-AR fallback; F3 uses ARIMA then VAR/ETS/random-walk fallback plus Student-t copula (Gaussian fallback); F4 uses the ARIMA fallback chain, optional GARCH scaling, then Student-t marginal tails. The optional vine, regime-copula, EVT, and Markov-switching-GARCH modules are present but not selected by the dispatcher.
+- Implemented: CLI wrapper, input loading/cutoff, output serialization, analog, ARIMA/ETS/random-walk and block-bootstrap forecasts, VAR, two-regime AR, GARCH scaling, skewed-t draws, EVT and regime-volatility transform modules, and Gaussian/Student-t/dependence modules.
+- Wired into `main.py`: F1 now uses a local-drift random walk with a 252-observation window and full drift shrinkage, the best standalone setting in the three-seed F1 drift grid. Past-only model selection is the fallback if that forecast fails. GARCH scale is blended toward empirical horizon variance and bounded. Copula correlation uses recency-weighted estimates with sample-size-aware shrinkage. F2 uses ARIMA then regime-AR fallback; F3 uses ARIMA then VAR/ETS/random-walk fallback plus Student-t copula (Gaussian fallback); F4 uses the ARIMA fallback chain, GARCH scaling, then Student-t marginal tails. ARIMA and ETS simulate complete paths across horizons, and the copula and tail transform preserve those within-asset path ranks. The optional vine, regime-copula, EVT, and Markov-switching-GARCH modules are present but not selected by the dispatcher.
 - Template only: LLM endpoint, prompt, signal parsing, and text-conditioning functions. They return neutral signals or pass draws through; text is not currently used to adjust forecasts.
-- Not yet validated end to end. The model implementations and Docker contract still need a review and explicit local gate run before submission.
+- The F1 entrypoint and organizer smoke gate passed on two practice units (one log-return card and one level card). The full Docker image and all-card contract still need validation before submission.
+- A document-free, two-origin numerical backtest now covers 90 cards across all four families. It compares fixed ARIMA with local drift, tests shrunk EWMA volatility (GARCH when available), and tests Gaussian/Student-t copulas. See [`testing/layer_backtest/REPORT.md`](testing/layer_backtest/REPORT.md) for scores, exclusions, paired comparisons, and four family plots; these are local relative scores, not official CodaBench scores.
 
 ## Objective and scoring context
 
@@ -102,9 +103,11 @@ Models receive the filtered panel, card, `asof`, draw count, and seed; they retu
 | File | Inputs | Outputs and role |
 |---|---|---|
 | `statistical_layer/__init__.py` | None. | Package exports, if useful. |
-| `statistical_layer/arima.py` | Numerical panel and forecast parameters. | Per-asset ARIMA predictive draws; primary baseline model across families. |
-| `statistical_layer/block_bootstrap.py` | Panel, card, `asof`, draw count, seed, block length. | Resamples contiguous transformed increments; selected first for F1 log-return targets based on preliminary rolling-origin results, not for level targets. |
-| `statistical_layer/ets.py` | Same numerical inputs. | Exponential smoothing draws; fallback when ARIMA fitting fails. |
+| `statistical_layer/arima.py` | Numerical panel and forecast parameters. | Per-asset state-space ARIMA simulations; each draw is a complete path shared by all requested horizons. |
+| `statistical_layer/analog.py` | Panel, card, `asof`, draw count, seed, analogue count. | Finds similar historical states using trend, volatility, and (for levels) relative-level features; samples complete observed future paths. Candidate model in F1 rolling validation; requires at least 20 complete donors. |
+| `statistical_layer/model_selection.py` | Panel, card, `asof`, draw count, seed. | F1 safety fallback: backtests target-aware ARIMA variants, residual-block ARIMA, ETS, analog, and local-drift random walk at up to four past-only origins, then fits a conservative mixture through `asof`. |
+| `statistical_layer/block_bootstrap.py` | Panel, card, `asof`, draw count, seed, block length. | Resamples contiguous transformed increments; fallback for F1 log-return targets, not used for level targets. |
+| `statistical_layer/ets.py` | Same numerical inputs. | Exponential smoothing paths with bootstrapped residual blocks; fallback when ARIMA fitting fails. |
 | `statistical_layer/random_walk.py` | Same numerical inputs. | Robust final fallback based on the latest level or historical increments. |
 | `statistical_layer/var.py` | Aligned multi-asset panel and forecast parameters. | Joint VAR forecast paths/draws, capturing cross-asset effects in means; mainly F3. |
 | `statistical_layer/markov_switching_ar.py` | Target history and forecast parameters. | Regime-dependent autoregressive draws; mainly F2 when enough data supports a stable fit. |
@@ -118,7 +121,7 @@ Transformation modules reshape marginal volatility or tails. They preserve draw 
 | File | Inputs | Outputs and role |
 |---|---|---|
 | `transformation_layer/__init__.py` | None. | Package exports, if useful. |
-| `transformation_layer/garch.py` | History/residuals, base draws, card, seed. | Conditional volatility estimates or volatility-adjusted draws. |
+| `transformation_layer/garch.py` | History/residuals, base draws, card, seed, shrinkage/bounds. | Shrinks conditional volatility toward empirical horizon scale and bounds the resulting scale changes; uses EWMA if GARCH fitting is unavailable. |
 | `transformation_layer/skewed_t.py` | Base draws or standardized innovations, scale and distribution parameters, seed. | Fat-tailed and asymmetric marginal draws; mainly F4. |
 | `transformation_layer/markov_switching_garch.py` | History/residuals and base draws. | Regime-dependent volatility draws; later F4 enhancement. |
 | `transformation_layer/evt.py` | Historical residuals and base draws. | Extreme-value tail adjustment; optional F4 refinement when enough tail data is available. |
@@ -131,9 +134,9 @@ Joint modules receive marginal draws and aligned historical observations or depe
 
 | File | Inputs | Outputs and role |
 |---|---|---|
-| `joint_draws_layer/__init__.py` | None. | Package exports, if useful. |
-| `joint_draws_layer/gaussian_copula.py` | Marginal draws, aligned history/dependence matrix, seed. | Applies Gaussian dependence; first copula implementation for F3. |
-| `joint_draws_layer/student_t_copula.py` | Marginal draws, dependence estimates, degrees-of-freedom setting, seed. | Adds joint tail dependence; upgrade for F3 and candidate for multi-asset F4. |
+| `joint_draws_layer/__init__.py` | Aligned panel, target assets/type, estimator settings. | Recency-weighted correlation with adaptive identity shrinkage and PSD projection. |
+| `joint_draws_layer/gaussian_copula.py` | Marginal draws, aligned history/dependence matrix, seed. | Reassigns whole asset paths by terminal-horizon Gaussian copula ranks, preserving within-path horizon relationships. |
+| `joint_draws_layer/student_t_copula.py` | Marginal draws, dependence estimates, degrees-of-freedom setting, seed. | Adds terminal cross-asset tail dependence while keeping each asset path intact. |
 | `joint_draws_layer/vine_copula.py` | Marginal draws, aligned history, seed and settings. | Flexible pairwise dependence for larger or heterogeneous panels; optional later. |
 | `joint_draws_layer/regime_copula.py` | Marginal draws, regime probabilities/labels, per-regime dependence, seed. | Regime-specific dependence; optional refinement. |
 
@@ -164,7 +167,7 @@ Define the signal schema before implementing prompts. Useful candidate fields in
 
 F1 usually tests one asset at one horizon. Its single-cell score emphasizes marginal CRPS (effective 71.4%) and tail penalty (28.6%); joint variogram is zero by construction.
 
-- **Layer 1:** ARIMA, ETS fallback, random-walk fallback.
+- **Layer 1:** Primary forecast is local-drift random walk (252-observation window, full shrinkage), selected by the multi-seed standalone F1 backtest. Past-only ARIMA/ETS/analog model selection remains as a fallback if the primary fails. See the drift grid and selector follow-up in `testing/README.md`.
 - **Layer 2:** Usually skip. GARCH/skewed-t is optional if leaderboard feedback points to tail weakness. EVT is generally not useful with little single-series tail data.
 - **Layer 3:** Skip for single-cell cards.
 - **Layer 4:** Optional text extraction, mean shift, and variance scaling where corpus signals are relevant.
