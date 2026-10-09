@@ -16,7 +16,13 @@ import numpy as np
 import input as input_io
 import output as output_io
 from joint_draws_layer import gaussian_copula, student_t_copula
-from llm import signals as llm_signals
+from llm import (
+    copula_adjustment as llm_copula_adjustment,
+    mean_shift as llm_mean_shift,
+    signals as llm_signals,
+    tail_skew as llm_tail_skew,
+    variance_scale as llm_variance_scale,
+)
 from statistical_layer import (
     arima, block_bootstrap, ets, markov_switching_ar, model_selection,
     random_walk, var,
@@ -115,6 +121,25 @@ def _sample_with_fallback(panel, card, asof: str, n_draws: int, seed: int,
     raise RuntimeError(f"all numerical forecasters failed: {details}")
 
 
+def _text_note(signals: dict, applied: str) -> str:
+    """One honest line for the rationale: what the witness said and what moved."""
+    neutral = (
+        abs(signals.get("mean_shift_sigma", 0.0)) < 1e-9
+        and abs(signals.get("variance_scale", 1.0) - 1.0) < 1e-9
+        and signals.get("tail_direction", "none") == "none"
+        and abs(signals.get("correlation_scale", 1.0) - 1.0) < 1e-9
+    )
+    if neutral:
+        return f"LLM text conditioning neutral ({applied})"
+    return (
+        f"LLM text conditioning ({applied}): "
+        f"mean shift {signals['mean_shift_sigma']:+.2f} sd, "
+        f"variance x{signals['variance_scale']:.2f}, "
+        f"tail {signals['tail_direction']} (strength {signals['tail_strength']:.2f}), "
+        f"correlation x{signals['correlation_scale']:.2f}, basis {signals['basis']}"
+    )
+
+
 def run(args: argparse.Namespace) -> dict:
     unit_dir = pathlib.Path(args.panels).expanduser()
     card_path = pathlib.Path(args.card).expanduser() if args.card else input_io.find_card(unit_dir)
@@ -164,9 +189,24 @@ def run(args: argparse.Namespace) -> dict:
             except Exception as exc:
                 method_notes.append(f"joint tail coupling skipped ({exc})")
 
-    if "F2" in family or "F4" in family:
+    if any(tag in family for tag in ("F2", "F3", "F4")):
         signals = llm_signals.extract_signals(documents, args.asof, card)
-        method_notes.append("LLM text conditioning is a neutral template")
+
+    if "F2" in family:
+        draws = llm_mean_shift.apply(draws, signals)
+        draws = llm_variance_scale.apply(draws, signals)
+        method_notes.append(_text_note(signals, "F2 mean shift + variance scale"))
+
+    if "F3" in family and len(card["targets"]["asset_ids"]) > 1:
+        draws = llm_copula_adjustment.apply(
+            draws, panel, card, signals, seed=args.seed + 300
+        )
+        method_notes.append(_text_note(signals, "F3 dependence adjustment"))
+
+    if "F4" in family:
+        draws = llm_variance_scale.apply(draws, signals)
+        draws = llm_tail_skew.apply(draws, signals, seed=args.seed + 301)
+        method_notes.append(_text_note(signals, "F4 variance scale + tail skew"))
 
     rationale_method = "; ".join(method_notes)
     if signals is None:

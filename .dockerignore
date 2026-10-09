@@ -1,0 +1,24 @@
+# Keep the image build context small: the agent image copies only my_agent_3/
+# and qfbench2_track_forecasting/, but the context is the repository root, so
+# everything heavy must be excluded here.
+.git
+.venv
+graphify-out
+units
+docs
+data
+baselines
+Forecaster
+my-agent
+my-agent-2
+regression_suite
+scoring
+scripts
+templates
+tests
+.github
+*.md
+*.log
+
+# never bake dev-time LLM responses into the submission image
+my_agent_3/cache
