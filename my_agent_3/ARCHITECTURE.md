@@ -2,7 +2,7 @@
 
 ## Executive summary (read this first)
 
-This document describes the files for `my_agent_3` and what data each file receives and returns. The agent loads the card, numerical panel, and frozen text corpus; composes the forecasting layers in `main.py`; validates the resulting draws; and writes the three required forecast files. Pipeline composition stays in `main.py`, as agreed. There is no separate `guardrails.py`. The numerical layers have initial implementations; files in `llm/` remain placeholders by design.
+This document describes the files for `my_agent_3` and what data each file receives and returns. The agent loads the card, numerical panel, and frozen text corpus; composes the forecasting layers in `main.py`; validates the resulting draws; and writes the three required forecast files. Pipeline composition stays in `main.py`. There is no separate `guardrails.py`. The numerical layers and the `llm/` text layer are implemented; optional modules (vine and regime copulas, EVT, Markov-switching GARCH) are available but not selected by the dispatcher.
 
 ## Shared data contracts
 

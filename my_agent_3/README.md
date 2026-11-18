@@ -2,7 +2,9 @@
 
 ## Executive summary (read this first)
 
-`my_agent_3` is being built as a Docker forecasting agent for Agenthon 2026 Track 2. It reads a numerical panel and a frozen, dated text corpus, produces probabilistic Monte Carlo forecast draws, and writes the competition's required output files. `main.py` owns the family-specific pipeline composition. Numerical implementations live in the statistical, transformation, and joint-draw layers. The `llm/` package is intentionally a barebones template for later work.
+`my_agent_3` is our final Docker forecasting agent for Agenthon 2026 Track 2. It reads a numerical panel and a frozen, dated text corpus, produces probabilistic Monte Carlo forecast draws, and writes the competition's required output files. `main.py` owns the family-specific pipeline composition. Numerical implementations live in the statistical, transformation, and joint-draw layers; the `llm/` package turns the text corpus into bounded signals that adjust those draws.
+
+For a non-technical overview, start with [`docs/HOW-IT-WORKS.md`](../docs/HOW-IT-WORKS.md) and [`docs/RESULTS.md`](../docs/RESULTS.md) at the repository root. This file is the detailed engineering reference.
 
 The first goal is a reliable valid submission, then stronger family-specific models. Local gates can validate interface and data contracts, but realized outcomes are sealed; model score feedback comes from a CodaBench submission.
 
@@ -10,7 +12,7 @@ The first goal is a reliable valid submission, then stronger family-specific mod
 
 - Implemented: CLI wrapper, input loading/cutoff, output serialization, analog, ARIMA/ETS/random-walk and block-bootstrap forecasts, VAR, two-regime AR, GARCH scaling, skewed-t draws, EVT and regime-volatility transform modules, and Gaussian/Student-t/dependence modules.
 - Wired into `main.py`: F1 now uses a local-drift random walk with a 252-observation window and full drift shrinkage, the best standalone setting in the three-seed F1 drift grid. Past-only model selection is the fallback if that forecast fails. GARCH scale is blended toward empirical horizon variance and bounded. Copula correlation uses recency-weighted estimates with sample-size-aware shrinkage. F2 uses ARIMA then regime-AR fallback; F3 uses ARIMA then VAR/ETS/random-walk fallback plus Student-t copula (Gaussian fallback); F4 uses the ARIMA fallback chain, GARCH scaling, then Student-t marginal tails. ARIMA and ETS simulate complete paths across horizons, and the copula and tail transform preserve those within-asset path ranks. The optional vine, regime-copula, EVT, and Markov-switching-GARCH modules are present but not selected by the dispatcher.
-- Template only: LLM endpoint, prompt, signal parsing, and text-conditioning functions. They return neutral signals or pass draws through; text is not currently used to adjust forecasts.
+- LLM text layer: `llm/client.py` calls the organizer's model endpoint (stdlib only, cached by content hash so re-runs are identical); `llm/prompts.py` and `llm/signals.py` elicit and hard-bound a fixed signal vector (mean shift, variance scale, tail direction/strength, correlation scale, shock probability, basis, evidence). Only corpus-stated evidence may narrow variance, and any endpoint or validation failure falls back to neutral signals. `main.py` applies mean shift + variance scale for F2, a dependence adjustment for multi-asset F3, and variance scale + tail skew for F4; F1 stays text-free. The choice of conditioning mechanism is benchmarked in [`testing/posterior_benchmark/POSTERIOR_BENCHMARK.md`](testing/posterior_benchmark/POSTERIOR_BENCHMARK.md).
 - The F1 entrypoint and organizer smoke gate passed on two practice units (one log-return card and one level card). The full Docker image and all-card contract still need validation before submission.
 - A document-free, two-origin numerical backtest now covers 90 cards across all four families. It compares fixed ARIMA with local drift, tests shrunk EWMA volatility (GARCH when available), and tests Gaussian/Student-t copulas. See [`testing/layer_backtest/REPORT.md`](testing/layer_backtest/REPORT.md) for scores, exclusions, paired comparisons, and four family plots; these are local relative scores, not official CodaBench scores.
 
@@ -20,7 +22,7 @@ Track 2 evaluates probabilistic forecasts using a CRPS composite with marginal C
 
 The agent's deliverable is a Docker image that implements the `forecast` verb and is uploaded to CodaBench. It is not enough to deliver source code or a repository.
 
-## Planned project structure
+## Project structure
 
 ```text
 my_agent_3/

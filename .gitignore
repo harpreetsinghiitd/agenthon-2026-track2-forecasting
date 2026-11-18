@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Agent run outputs
+out/
+output/
+Forecaster/*/output/
+
+# LLM response caches are local dev artifacts; never commit them
+my_agent_3/cache/
+my_agent_3/testing/posterior_benchmark/cache/
+my-agent-2/.cache/
+
+# Competition data belongs to the organizers and is not redistributed here
+units/
+data/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
